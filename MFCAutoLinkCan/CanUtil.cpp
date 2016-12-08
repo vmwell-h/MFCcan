@@ -48,6 +48,11 @@ LONG CanUtil::str2HEX(PBYTE src_str, PBYTE dst_buf)
 
 	len = strlen((char *)src_str);
 
+	if (src_str[0] == '0' && (src_str[1] == 'x' || src_str[1] == 'X'))
+	{
+		len -= 2;
+		src_str += 2;
+	}
 	dst_pos = 0;
 
 	if (len % 2)

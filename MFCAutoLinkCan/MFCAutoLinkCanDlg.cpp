@@ -63,7 +63,14 @@ CMFCAutoLinkCanDlg::CMFCAutoLinkCanDlg(CWnd* pParent /*=NULL*/)
 	m_RecvRow = 0;
 
 	m_SameId = FALSE;
+	m_FoldId = TRUE;
 	m_GetPre = FALSE;
+	
+	m_Smil = FALSE;
+	m_RLSum = 0;
+	m_RRSum = 0;
+	m_RLStep = 10;
+	m_RRStep = 10;
 
 	m_XmitEnable = TRUE;
 	m_RecvEnable = TRUE;
@@ -79,8 +86,12 @@ void CMFCAutoLinkCanDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_EDIT_PREDATA, m_EditPre);
 
 	DDX_Check(pDX, IDC_CHECK_SAMEID, m_SameId);
+	DDX_Check(pDX, IDC_CHECK_DISPMODE, m_FoldId);
 	DDX_Check(pDX, IDC_CHECK_XMIT, m_XmitEnable);
 	DDX_Check(pDX, IDC_CHECK_RECV, m_RecvEnable);
+
+	DDX_Control(pDX, IDC_EDIT_RLSTEP, m_EditRLStep);
+	DDX_Control(pDX, IDC_EDIT_RRSTEP, m_EditRRStep);
 }
 
 BEGIN_MESSAGE_MAP(CMFCAutoLinkCanDlg, CDialogEx)
@@ -104,6 +115,11 @@ BEGIN_MESSAGE_MAP(CMFCAutoLinkCanDlg, CDialogEx)
 	ON_COMMAND(ID_MENU_CANCEL, &CMFCAutoLinkCanDlg::OnMenuCancel)
 	ON_BN_CLICKED(IDC_CHECK_XMIT, &CMFCAutoLinkCanDlg::OnBnClickedCheckXmit)
 	ON_BN_CLICKED(IDC_CHECK_RECV, &CMFCAutoLinkCanDlg::OnBnClickedCheckRecv)
+	ON_BN_CLICKED(IDC_START, &CMFCAutoLinkCanDlg::OnBnClickedStart)
+	ON_BN_CLICKED(IDC_CHECK_DISPMODE, &CMFCAutoLinkCanDlg::OnBnClickedCheckDispmode)
+	ON_COMMAND(ID_MENU_SMIL, &CMFCAutoLinkCanDlg::OnMenuSmil)
+	ON_COMMAND(ID_MENU_EMIL, &CMFCAutoLinkCanDlg::OnMenuEmil)
+	ON_BN_CLICKED(IDC_BUTTON_SETSTEP, &CMFCAutoLinkCanDlg::OnBnClickedButtonSetstep)
 END_MESSAGE_MAP()
 
 
@@ -179,6 +195,8 @@ BOOL CMFCAutoLinkCanDlg::OnInitDialog()
 
 
 	m_EditPre.SetLimitText(23);
+	m_EditRLStep.SetLimitText(5);
+	m_EditRRStep.SetLimitText(5);
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -236,6 +254,13 @@ HCURSOR CMFCAutoLinkCanDlg::OnQueryDragIcon()
 void CMFCAutoLinkCanDlg::OnMenuOpendev()
 {
 	// TODO: 在此添加命令处理程序代码
+	COpenDevDlg  Dlg;
+	Dlg.DoModal();
+}
+
+void CMFCAutoLinkCanDlg::OnBnClickedStart()
+{
+	// TODO: 在此添加控件通知处理程序代码
 	COpenDevDlg  Dlg;
 	Dlg.DoModal();
 }
@@ -326,6 +351,8 @@ void CMFCAutoLinkCanDlg::OnMenuDelmsg()
 
 	ps = m_XmitList.GetFirstSelectedItemPosition();
 	nIndex = m_XmitList.GetNextSelectedItem(ps);
+
+	if (nIndex == -1) return;
 
 	INT ListSize = m_XmitList.GetItemCount();
 	for (INT i = nIndex; i < ListSize; i++)
@@ -681,7 +708,7 @@ void CMFCAutoLinkCanDlg::OnTimer(UINT_PTR nIDEvent)
 
 	INT nItem;
 	CanMsg_t CanMsg;
-	BOOL IdExit;
+	BOOL IdExist;
 
 	if (m_RecvEnable == TRUE)
 	{
@@ -699,46 +726,72 @@ void CMFCAutoLinkCanDlg::OnTimer(UINT_PTR nIDEvent)
 
 			INT_PTR ArraySize = m_RecvArray.GetSize();
 			ReceivedID = pCanObj[num].ID;
-			IdExit = FALSE;
-			for (nItem = 0; nItem < ArraySize; nItem++)
+
+			if (m_FoldId == TRUE)
 			{
-				CanMsg = m_RecvArray.GetAt(nItem);
-				if (ReceivedID == CanMsg.Id)
+				IdExist = FALSE;
+				for (nItem = 0; nItem < ArraySize; nItem++)
 				{
-					IdExit = TRUE;
-					break;
+					CanMsg = m_RecvArray.GetAt(nItem);
+					if (ReceivedID == CanMsg.Id)
+					{
+						IdExist = TRUE;
+						break;
+					}
 				}
-			}
 
-			if (IdExit == TRUE)
-			{
-				CanMsg.Id = ReceivedID;
-				CanMsg.Dlc = pCanObj[num].DataLen;
-				CanMsg.Count++;
-				if (pCanObj[num].TimeFlag == 1)
+				if (IdExist == TRUE)
 				{
-					CanMsg.TimeCnt++;
-					if (CanMsg.LastTime == 0)
+					CanMsg.Id = ReceivedID;
+					CanMsg.Dlc = pCanObj[num].DataLen;
+					CanMsg.Count++;
+					if (pCanObj[num].TimeFlag == 1)
 					{
-						CanMsg.TimeCnt = 0;
-						CanMsg.LastTime = pCanObj[num].TimeStamp;
-					}
+						CanMsg.TimeCnt++;
+						if (CanMsg.LastTime == 0)
+						{
+							CanMsg.TimeCnt = 0;
+							CanMsg.LastTime = pCanObj[num].TimeStamp;
+						}
 
-					if (CanMsg.TimeCnt >= TIME_MAX)
-					{
-						CanMsg.Cycle = (pCanObj[num].TimeStamp - CanMsg.LastTime) / (10 * TIME_MAX);
-						CanMsg.TimeCnt = 0;
-						CanMsg.LastTime = pCanObj[num].TimeStamp;
+						if (CanMsg.TimeCnt >= TIME_MAX)
+						{
+							CanMsg.Cycle = (pCanObj[num].TimeStamp - CanMsg.LastTime) / (10 * TIME_MAX);
+							CanMsg.TimeCnt = 0;
+							CanMsg.LastTime = pCanObj[num].TimeStamp;
+						}
 					}
+					else
+					{
+						CanMsg.Cycle = 0;
+						CanMsg.TimeCnt = 0;;
+						CanMsg.LastTime = 0;
+					}
+					//Refresh the RecvArray
+					m_RecvArray.SetAt(nItem, CanMsg);
 				}
 				else
 				{
+					CanMsg.Id = ReceivedID;
+					CanMsg.Dlc = pCanObj[num].DataLen;
+					CanMsg.Count = 1;
 					CanMsg.Cycle = 0;
-					CanMsg.TimeCnt = 0;;
-					CanMsg.LastTime = 0;
+					if (pCanObj[num].TimeFlag == 1)
+					{
+						CanMsg.TimeCnt = 0;
+						CanMsg.LastTime = pCanObj[num].TimeStamp;
+					}
+					else
+					{
+						CanMsg.TimeCnt = 0;
+						CanMsg.LastTime = 0;
+					}
+
+					nItem = m_RecvList.InsertItem(m_RecvRow, _T(""));
+					m_RecvRow++;
+					m_RecvArray.Add(CanMsg);
+
 				}
-				//Refresh the RecvArray
-				m_RecvArray.SetAt(nItem, CanMsg);
 			}
 			else
 			{
@@ -759,10 +812,7 @@ void CMFCAutoLinkCanDlg::OnTimer(UINT_PTR nIDEvent)
 
 				nItem = m_RecvList.InsertItem(m_RecvRow, _T(""));
 				m_RecvRow++;
-				m_RecvArray.Add(CanMsg);
-
 			}
-
 
 			//Refresh the RecvList
 			if (CanMsg.Cycle == 0)
@@ -828,9 +878,30 @@ void CMFCAutoLinkCanDlg::OnTimer(UINT_PTR nIDEvent)
 					for (INT i = 0; i < CanMsg.Dlc; i++)
 						SendObj->Data[i] = CanMsg.Data[i];
 
+					if (CanMsg.Id == 0x2EA && m_Smil == TRUE)
+					{
+						SendObj->Data[3] |= 0x06;
+						SendObj->Data[4] = (BYTE)(m_RLSum >> 8);
+						SendObj->Data[5] = (BYTE)(m_RLSum >> 0);
+						SendObj->Data[6] = (BYTE)(m_RRSum >> 8);
+						SendObj->Data[7] = (BYTE)(m_RRSum >> 0);
+
+						m_RLSum += m_RLStep;
+						m_RRSum += m_RRStep;
+
+						str = _T("");
+						for (INT i = 0; i < CanMsg.Dlc; i++)
+						{
+							str1.Format(_T("%02X"), SendObj->Data[i]);
+							str = (str + str1 + _T(" "));
+						}
+						m_XmitList.SetItemText(nItem, 3, str);	         //Can Data
+					}
+
 					CMFCAutoLinkCanDlg::TransmitCanmsg(SendObj);
 
-
+					str.Format(_T("%d"), CanMsg.Count);
+					m_XmitList.SetItemText(nItem, 4, str);	         //Count
 				}
 
 				if (CanMsg.FrameNum > 0 && CanMsg.Count > CanMsg.FrameNum)
@@ -863,7 +934,11 @@ void CMFCAutoLinkCanDlg::OnBnClickedCheckSameid()
 	UpdateData(TRUE);
 }
 
-
+void CMFCAutoLinkCanDlg::OnBnClickedCheckDispmode()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	UpdateData(TRUE);
+}
 
 void CMFCAutoLinkCanDlg::OnBnClickedCheckXmit()
 {
@@ -944,23 +1019,23 @@ void CMFCAutoLinkCanDlg::XmitMsgAdd()
 	CanMsg = MsgConvert(EditMsg);
 
 	CanMsg_t nCanMsg;
-	BOOL IdExit;
+	BOOL IdExist;
 	UINT nItem;
 	UINT nowItem;
 	CString str;
 	INT_PTR ListSize = m_XmitArray.GetSize();
-	IdExit = FALSE;
+	IdExist = FALSE;
 	for (nItem = 0; nItem < ListSize; nItem++)
 	{
 		nCanMsg = m_XmitArray.GetAt(nItem);
 		if (CanMsg.Id == nCanMsg.Id)
 		{
-			IdExit = TRUE;
+			IdExist = TRUE;
 			break;
 		}
 	}
 
-	if (IdExit == FALSE || m_SameId == TRUE)
+	if (IdExist == FALSE || m_SameId == TRUE)
 	{
 		nowItem = m_XmitList.InsertItem(m_XmitRow, _T(""));
 		m_XmitRow++;
@@ -978,4 +1053,96 @@ void CMFCAutoLinkCanDlg::XmitMsgAdd()
 	m_XmitList.SetItemText(nowItem, 2, str);	        //Can Data Length
 	m_XmitList.SetItemText(nowItem, 3, EditMsg.Data);	    //Can Data
 	m_XmitList.SetItemText(nowItem, 5, EditMsg.FrameNum);	////Frame Num
+}
+
+
+
+void CMFCAutoLinkCanDlg::OnMenuSmil()
+{
+	// TODO: 在此添加命令处理程序代码
+	CanMsg_t CanMsg;
+	CanMsg.Id = 0x2EA;
+	CanMsg.Dlc = 8;
+	memset(CanMsg.Data, 0, 8);
+	CanMsg.Cycle = 20;
+	CanMsg.Count = 0;
+	CanMsg.FrameNum = 0;
+
+
+	CanMsg_t nCanMsg;
+	BOOL IdExist;
+	UINT nItem;
+	UINT nowItem;
+	CString str;
+	INT_PTR ListSize = m_XmitArray.GetSize();
+	IdExist = FALSE;
+	for (nItem = 0; nItem < ListSize; nItem++)
+	{
+		nCanMsg = m_XmitArray.GetAt(nItem);
+		if (CanMsg.Id == nCanMsg.Id)
+		{
+			IdExist = TRUE;
+			break;
+		}
+	}
+
+	if (IdExist == FALSE)
+	{
+		nowItem = m_XmitList.InsertItem(m_XmitRow, _T(""));
+		m_XmitRow++;
+		m_XmitArray.Add(CanMsg);
+
+		m_XmitList.SetItemText(nowItem, 0, _T("20"));	                        //Cycle Time
+		m_XmitList.SetItemText(nowItem, 1, _T("0x2EA"));	                    //Can id
+		m_XmitList.SetItemText(nowItem, 2, _T("8"));	                        //Can Data Length
+		m_XmitList.SetItemText(nowItem, 3, _T("00 00 00 00 00 00 00 00"));	    //Can Data
+		m_XmitList.SetItemText(nowItem, 4, _T("0"));	                        //Count
+		m_XmitList.SetItemText(nowItem, 5, _T("0"));	                        //Frame Num
+	}
+	else
+	{
+		nowItem = nItem;
+	}
+
+	m_Smil = TRUE;
+	m_XmitList.SetCheck(nowItem, TRUE);
+}
+
+
+void CMFCAutoLinkCanDlg::OnMenuEmil()
+{
+	// TODO: 在此添加命令处理程序代码
+	m_Smil = FALSE;
+}
+
+
+void CMFCAutoLinkCanDlg::OnBnClickedButtonSetstep()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	BYTE temp_buf[50];
+	LONG temp_len;
+	BYTE HexBuf[10] = { 0 };
+	BYTE DecBuf[10] = { 0 };
+
+	CString EditStr;
+	//get the text from the EditBox
+	m_EditRLStep.GetWindowText(EditStr);
+
+	temp_len = CanUtil::str2char(EditStr, temp_buf) - 1;
+	temp_len = CanUtil::str2DEC(temp_buf, DecBuf);
+	m_RLStep = 0;
+	for (int i = 0; i < temp_len; i++)
+	{
+		m_RLStep = m_RLStep * 10 + DecBuf[i];
+	}
+
+	m_EditRRStep.GetWindowText(EditStr);
+
+	temp_len = CanUtil::str2char(EditStr, temp_buf) - 1;
+	temp_len = CanUtil::str2DEC(temp_buf, DecBuf);
+	m_RRStep = 0;
+	for (int i = 0; i < temp_len; i++)
+	{
+		m_RRStep = m_RRStep * 10 + DecBuf[i];
+	}
 }

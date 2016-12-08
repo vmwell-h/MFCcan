@@ -70,8 +70,18 @@ private:
 
 	CLimitHexEdit m_EditPre;
 	BOOL m_SameId;
+	BOOL m_FoldId;
 	BOOL m_GetPre;
 	UINT m_Item;
+
+	BOOL m_Smil;
+	WORD m_RLSum;
+	WORD m_RRSum;
+	WORD m_RLStep;
+	WORD m_RRStep;
+
+	CLimitDecEdit m_EditRLStep;
+	CLimitDecEdit m_EditRRStep;
 
 	BOOL m_XmitEnable;
 	BOOL m_RecvEnable;
@@ -99,4 +109,9 @@ public:
 	afx_msg void OnBnClickedCheckRecv();
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
 	void XmitMsgAdd();
+	afx_msg void OnBnClickedStart();
+	afx_msg void OnBnClickedCheckDispmode();
+	afx_msg void OnMenuSmil();
+	afx_msg void OnMenuEmil();
+	afx_msg void OnBnClickedButtonSetstep();
 };
