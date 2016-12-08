@@ -16,6 +16,8 @@
 #define new DEBUG_NEW
 #endif
 
+#define USE_TIMER
+
 extern CanConf_t CanConf;
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
@@ -189,10 +191,14 @@ BOOL CMFCAutoLinkCanDlg::OnInitDialog()
 	m_RecvList.SetColumnWidth(4, 55);
 
 	//CAN Msg handle Timer
+#ifdef USE_TIMER
 	SetTimer(1, TIMOUT_CAN_MS, NULL);
+#else
+	//开启接收线程
+	AfxBeginThread(MainThread, 0);
+#endif
 
 	m_EditPre.ShowWindow(SW_HIDE);
-
 
 	m_EditPre.SetLimitText(23);
 	m_EditRLStep.SetLimitText(5);
@@ -1145,4 +1151,232 @@ void CMFCAutoLinkCanDlg::OnBnClickedButtonSetstep()
 	{
 		m_RRStep = m_RRStep * 10 + DecBuf[i];
 	}
+}
+
+
+UINT CMFCAutoLinkCanDlg::MainThread(LPVOID v)
+{
+	CMFCAutoLinkCanDlg *dlg = (CMFCAutoLinkCanDlg*)AfxGetApp()->GetMainWnd();
+
+	INT NumValue;
+	INT num = 0;
+	VCI_CAN_OBJ pCanObj[200];
+	DWORD ReceivedID;
+	CString str, str1;
+
+
+	INT nItem;
+	CanMsg_t CanMsg;
+	BOOL IdExist;
+
+	while (1)
+	{
+		if (dlg->m_RecvEnable == TRUE)
+		{
+			//调用动态链接库接收函数
+			NumValue = VCI_Receive(VCI_USBCAN2, CAN_DEVINDEX, CanConf.mCanChnl, pCanObj, 200, 0);
+
+			for (num = 0; num < NumValue; num++)
+			{
+
+				if (dlg->m_RecvRow >= 59999)
+				{
+					dlg->m_RecvList.DeleteAllItems();
+					dlg->m_RecvRow = 0;
+				}
+
+				INT_PTR ArraySize = dlg->m_RecvArray.GetSize();
+				ReceivedID = pCanObj[num].ID;
+
+				if (dlg->m_FoldId == TRUE)
+				{
+					IdExist = FALSE;
+					for (nItem = 0; nItem < ArraySize; nItem++)
+					{
+						CanMsg = dlg->m_RecvArray.GetAt(nItem);
+						if (ReceivedID == CanMsg.Id)
+						{
+							IdExist = TRUE;
+							break;
+						}
+					}
+
+					if (IdExist == TRUE)
+					{
+						CanMsg.Id = ReceivedID;
+						CanMsg.Dlc = pCanObj[num].DataLen;
+						CanMsg.Count++;
+						if (pCanObj[num].TimeFlag == 1)
+						{
+							CanMsg.TimeCnt++;
+							if (CanMsg.LastTime == 0)
+							{
+								CanMsg.TimeCnt = 0;
+								CanMsg.LastTime = pCanObj[num].TimeStamp;
+							}
+
+							if (CanMsg.TimeCnt >= TIME_MAX)
+							{
+								CanMsg.Cycle = (pCanObj[num].TimeStamp - CanMsg.LastTime) / (10 * TIME_MAX);
+								CanMsg.TimeCnt = 0;
+								CanMsg.LastTime = pCanObj[num].TimeStamp;
+							}
+						}
+						else
+						{
+							CanMsg.Cycle = 0;
+							CanMsg.TimeCnt = 0;;
+							CanMsg.LastTime = 0;
+						}
+						//Refresh the RecvArray
+						dlg->m_RecvArray.SetAt(nItem, CanMsg);
+					}
+					else
+					{
+						CanMsg.Id = ReceivedID;
+						CanMsg.Dlc = pCanObj[num].DataLen;
+						CanMsg.Count = 1;
+						CanMsg.Cycle = 0;
+						if (pCanObj[num].TimeFlag == 1)
+						{
+							CanMsg.TimeCnt = 0;
+							CanMsg.LastTime = pCanObj[num].TimeStamp;
+						}
+						else
+						{
+							CanMsg.TimeCnt = 0;
+							CanMsg.LastTime = 0;
+						}
+
+						nItem = dlg->m_RecvList.InsertItem(dlg->m_RecvRow, _T(""));
+						dlg->m_RecvRow++;
+						dlg->m_RecvArray.Add(CanMsg);
+
+					}
+				}
+				else
+				{
+					CanMsg.Id = ReceivedID;
+					CanMsg.Dlc = pCanObj[num].DataLen;
+					CanMsg.Count = 1;
+					CanMsg.Cycle = 0;
+					if (pCanObj[num].TimeFlag == 1)
+					{
+						CanMsg.TimeCnt = 0;
+						CanMsg.LastTime = pCanObj[num].TimeStamp;
+					}
+					else
+					{
+						CanMsg.TimeCnt = 0;
+						CanMsg.LastTime = 0;
+					}
+
+					nItem = dlg->m_RecvList.InsertItem(dlg->m_RecvRow, _T(""));
+					dlg->m_RecvRow++;
+				}
+
+				//Refresh the RecvList
+				if (CanMsg.Cycle == 0)
+					str.Format(_T("---"));
+				else
+					str.Format(_T("%d"), CanMsg.Cycle);
+				dlg->m_RecvList.SetItemText(nItem, 0, str);	         //Cycle Time
+
+				str.Format(_T("%04X"), CanMsg.Id);
+				dlg->m_RecvList.SetItemText(nItem, 1, str);	         //Can id
+				str.Format(_T("%d"), CanMsg.Dlc);
+				dlg->m_RecvList.SetItemText(nItem, 2, str);	         //Can Data Length
+
+				str = _T("");
+				for (INT i = 0; i < CanMsg.Dlc; i++)
+				{
+					str1.Format(_T("%02X"), pCanObj[num].Data[i]);
+					str = (str + str1 + _T(" "));
+				}
+				dlg->m_RecvList.SetItemText(nItem, 3, str);	         //Can Data
+
+				str.Format(_T("%d"), CanMsg.Count);
+				dlg->m_RecvList.SetItemText(nItem, 4, str);	         //Count
+
+			}
+		}
+		/*---------------------------------------------------------------*
+		*---------------------------------------------------------------*/
+		//处理发送消息
+		if (dlg->m_XmitEnable == TRUE)
+		{
+			VCI_CAN_OBJ SendObj[1];
+
+			if (dlg->m_XmitArray.GetSize() != dlg->m_XmitList.GetItemCount())
+			{
+				dlg->m_XmitList.DeleteAllItems();
+				dlg->m_XmitArray.RemoveAll();
+			}
+
+			INT ListSize = dlg->m_XmitList.GetItemCount();
+			for (nItem = 0; nItem < ListSize; nItem++)
+			{
+				if (dlg->m_XmitList.GetCheck(nItem))
+				{
+					if (CanMsg.Cycle == 0) continue;
+
+					CanMsg = dlg->m_XmitArray.GetAt(nItem);
+					CanMsg.TimeCnt += TIMOUT_CAN_MS;
+					if (CanMsg.TimeCnt >= CanMsg.Cycle)
+					{
+						CanMsg.TimeCnt = 0;
+						CanMsg.Count++;
+
+						int FrameFormat, FrameType;
+						FrameFormat = FRMFMT_STD;
+						FrameType = FRMTYP_DAT;
+
+						SendObj->ExternFlag = FrameType;
+						SendObj->DataLen = CanMsg.Dlc;
+						SendObj->RemoteFlag = FrameFormat;
+						SendObj->ID = CanMsg.Id;
+
+						for (INT i = 0; i < CanMsg.Dlc; i++)
+							SendObj->Data[i] = CanMsg.Data[i];
+
+						if (CanMsg.Id == 0x2EA && dlg->m_Smil == TRUE)
+						{
+							SendObj->Data[3] |= 0x06;
+							SendObj->Data[4] = (BYTE)(dlg->m_RLSum >> 8);
+							SendObj->Data[5] = (BYTE)(dlg->m_RLSum >> 0);
+							SendObj->Data[6] = (BYTE)(dlg->m_RRSum >> 8);
+							SendObj->Data[7] = (BYTE)(dlg->m_RRSum >> 0);
+
+							dlg->m_RLSum += dlg->m_RLStep;
+							dlg->m_RRSum += dlg->m_RRStep;
+
+							str = _T("");
+							for (INT i = 0; i < CanMsg.Dlc; i++)
+							{
+								str1.Format(_T("%02X"), SendObj->Data[i]);
+								str = (str + str1 + _T(" "));
+							}
+							dlg->m_XmitList.SetItemText(nItem, 3, str);	         //Can Data
+						}
+
+						dlg->TransmitCanmsg(SendObj);
+
+						str.Format(_T("%d"), CanMsg.Count);
+						dlg->m_XmitList.SetItemText(nItem, 4, str);	         //Count
+					}
+
+					if (CanMsg.FrameNum > 0 && CanMsg.Count > CanMsg.FrameNum)
+					{
+						CanMsg.Count = 0;
+						dlg->m_XmitList.SetCheck(nItem, FALSE);
+					}
+					//Refresh the RecvArray
+					dlg->m_XmitArray.SetAt(nItem, CanMsg);
+				}
+			}
+		}
+		Sleep(TIMOUT_CAN_MS);
+
+	}
+	return 1;
 }

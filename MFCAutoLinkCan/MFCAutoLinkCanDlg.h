@@ -114,4 +114,6 @@ public:
 	afx_msg void OnMenuSmil();
 	afx_msg void OnMenuEmil();
 	afx_msg void OnBnClickedButtonSetstep();
+
+	static UINT MainThread(void *param);
 };
